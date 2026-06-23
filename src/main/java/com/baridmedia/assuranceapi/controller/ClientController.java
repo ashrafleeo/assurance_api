@@ -2,15 +2,14 @@ package com.baridmedia.assuranceapi.controller;
 
 import com.baridmedia.assuranceapi.domain.Client;
 import com.baridmedia.assuranceapi.dto.ClientDto;
-import com.baridmedia.assuranceapi.dto.CreateClientRequest;
+import com.baridmedia.assuranceapi.dto.ClientRequestDto;
 import com.baridmedia.assuranceapi.service.ClientService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.util.UriComponentsBuilder;
 
-import java.net.URI;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -22,7 +21,7 @@ public class ClientController {
     private final ClientService clientService;
 
     @PostMapping
-    public ResponseEntity<ClientDto> createClient(@Valid @RequestBody CreateClientRequest req, UriComponentsBuilder uriBuilder) {
+    public ResponseEntity<ClientDto> createClient(@Valid @RequestBody ClientRequestDto req) {
         Client client = Client.builder()
                 .nom(req.nom())
                 .email(req.email())
@@ -31,15 +30,14 @@ public class ClientController {
 
         Client saved = clientService.createClient(client);
         ClientDto dto = new ClientDto(saved.getId(), saved.getNom(), saved.getEmail(), saved.getTelephone());
-        URI location = uriBuilder.path("/api/clients/{id}").buildAndExpand(saved.getId()).toUri();
-        return ResponseEntity.created(location).body(dto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
 
     @GetMapping
     public List<ClientDto> listClients() {
         return clientService.listAll().stream()
                 .map(c -> new ClientDto(c.getId(), c.getNom(), c.getEmail(), c.getTelephone()))
-                .collect(Collectors.toList());
+                .toList();
     }
 }
 

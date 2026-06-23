@@ -18,12 +18,6 @@ import java.util.Map;
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(ResourceNotFoundException.class)
-    @ResponseBody
-    public ResponseEntity<Object> handleNotFound(ResourceNotFoundException ex, WebRequest request) {
-        return buildError(HttpStatus.NOT_FOUND, ex.getMessage(), request.getDescription(false));
-    }
-
     @ExceptionHandler(ConflictException.class)
     @ResponseBody
     public ResponseEntity<Object> handleConflict(ConflictException ex, WebRequest request) {
@@ -36,32 +30,6 @@ public class GlobalExceptionHandler {
         return buildError(HttpStatus.valueOf(422), ex.getMessage(), request.getDescription(false));
     }
 
-    @ExceptionHandler(DataIntegrityViolationException.class)
-    @ResponseBody
-    public ResponseEntity<Object> handleDB(DataIntegrityViolationException ex, WebRequest request) {
-        return buildError(HttpStatus.CONFLICT, "Database error: " + ex.getMostSpecificCause().getMessage(), request.getDescription(false));
-    }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    @ResponseBody
-    public ResponseEntity<Object> handleValidation(MethodArgumentNotValidException ex, WebRequest request) {
-        Map<String, String> errors = new HashMap<>();
-        for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
-            errors.put(fe.getField(), fe.getDefaultMessage());
-        }
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now());
-        body.put("status", HttpStatus.BAD_REQUEST.value());
-        body.put("errors", errors);
-        body.put("path", request.getDescription(false));
-        return new ResponseEntity<>(body, new HttpHeaders(), HttpStatus.BAD_REQUEST);
-    }
-
-    @ExceptionHandler(Exception.class)
-    @ResponseBody
-    public ResponseEntity<Object> handleAny(Exception ex, WebRequest request) {
-        return buildError(HttpStatus.INTERNAL_SERVER_ERROR, "Internal error: " + ex.getMessage(), request.getDescription(false));
-    }
 
     private ResponseEntity<Object> buildError(HttpStatus status, String message, String path) {
         Map<String, Object> body = new HashMap<>();
