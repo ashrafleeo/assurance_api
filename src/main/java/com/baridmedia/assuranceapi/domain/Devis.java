@@ -21,7 +21,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
@@ -51,7 +50,7 @@ public class Devis {
     @NotNull
     @PositiveOrZero
     @Column(nullable = false)
-    private BigDecimal montant;
+    private Double montant;
 
     @NotNull
     @Enumerated(EnumType.STRING)
