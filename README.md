@@ -1,6 +1,6 @@
 # AssuranceApi — API REST de Gestion d'Assurance
 
-Une API REST Spring Boot moderne pour gérer les devis d'assurance, les contrats, les clients et les produits. Conçue pour les workflows métier réels du secteur assurantiel.
+Une API REST Spring Boot moderne pour gérer les devis d'assurance, les contrats, les clients et les produits.
 
 
 ## 🎯 Vue d'ensemble
@@ -40,7 +40,7 @@ Une API REST Spring Boot moderne pour gérer les devis d'assurance, les contrats
              │ Devis│ (Quote)
              └──┬───┘
                 │ 1
-                │ N
+                │ 1
           ──────▼────┐
          │  Contrat  │
          └───────────┘
@@ -60,18 +60,10 @@ CREATE TABLE client (
 );
 ```
 
-| Champ | Type | Contrainte | Description |
-|-------|------|-----------|-------------|
-| id | BIGINT | PK, AUTO | Identifiant unique |
-| nom | String | NOT NULL | Nom complet du client |
-| email | String | NOT NULL, UNIQUE | Email unique (identifiant métier) |
-| telephone | String | Optionnel | N° de téléphone contact |
-| dateCreation | LocalDateTime | AUTO | Timestamp création |
 
 **Règles métier** :
 - Email est obligatoire et unique (409 Conflict si doublon)
 - Le client peut avoir plusieurs devis
-- Le client ne peut être supprimé s'il a des devis/contrats liés
 
 ---
 
@@ -89,18 +81,10 @@ CREATE TABLE produit (
 );
 ```
 
-| Champ | Type | Contrainte | Description |
-|-------|------|-----------|-------------|
-| id | BIGINT | PK, AUTO | Identifiant unique |
-| code | String | NOT NULL, UNIQUE | Code produit unique (ex: AUTO-001) |
-| libelle | String | NOT NULL | Description (ex: Assurance Auto Premium) |
-| type | String | Optionnel | Catégorie (AUTO, HOME, TRAVEL) |
-| dateCreation | LocalDateTime | AUTO | Timestamp création |
 
 **Règles métier** :
 - Code est obligatoire et unique (409 Conflict si doublon)
 - Un produit peut être utilisé dans plusieurs devis
-- Pas de suppression si utilisé dans des devis actifs
 
 ---
 
@@ -121,16 +105,8 @@ CREATE TABLE devis (
 );
 ```
 
-| Champ | Type | Contrainte | Description |
-|-------|------|-----------|-------------|
-| id | BIGINT | PK, AUTO | Identifiant unique |
-| clientId | BIGINT | FK | Références Client |
-| produitId | BIGINT | FK | Références Produit |
-| montant | Double | NOT NULL, ≥ 0 | Montant d'assurance proposé |
-| statut | Enum | DEFAULT DRAFT | État du devis |
-| dateCreation | LocalDateTime | AUTO | Timestamp création |
 
-**Statuts du devis (État machine)** :
+**Statuts du devis** :
 
 ```
 DRAFT → PENDING_MANAGER → APPROVED → [Contract créé] ou REJECTED
@@ -139,12 +115,6 @@ DRAFT → PENDING_MANAGER → APPROVED → [Contract créé] ou REJECTED
     [si montant > 10k → PENDING_MANAGER (approb manuelle)]
 ```
 
-| Statut | Condition | Action possible | Montant |
-|--------|-----------|-----------------|---------|
-| DRAFT | Brouillon initial | Créer un contrat ? ❌ | — |
-| PENDING_MANAGER | En revue manager | Approuver ou rejeter | > 10 000 |
-| APPROVED | Approuvé | ✅ Créer contrat | Tous |
-| REJECTED | Rejeté | Aucune action | — |
 
 **Règles métier (critique)** :
 - **Auto-approbation** : Si montant ≤ 10 000 → statut APPROVED immédiatement
@@ -156,7 +126,7 @@ DRAFT → PENDING_MANAGER → APPROVED → [Contract créé] ou REJECTED
 
 ### 4. Contrat (Entité)
 
-**Responsabilité** : Représenter un contrat d'assurance actif/signé
+**Responsabilité** : Représenter un contrat d'assurance actif
 
 ```sql
 CREATE TABLE contrat (
@@ -170,14 +140,6 @@ CREATE TABLE contrat (
 );
 ```
 
-| Champ | Type | Contrainte | Description |
-|-------|------|-----------|-------------|
-| id | BIGINT | PK, AUTO | Identifiant unique |
-| devisId | BIGINT | FK, UNIQUE | Référence Devis (1-to-1) |
-| numeroContrat | String | UNIQUE | N° généré unique (CT-UUID) |
-| dateEffet | LocalDate | NOT NULL | Date de début de couverture |
-| statut | Enum | DEFAULT ACTIVE | État du contrat |
-| dateCreation | LocalDateTime | AUTO | Timestamp création |
 
 **Statuts du contrat** :
 
@@ -247,107 +209,6 @@ CREATE TABLE contrat (
 | **Séparation des concerns** | Service = métier, Controller = HTTP, Repository = SQL |
 | **Règles métier cohérentes** | Même règle appliquée partout (ex: seuil 10k pour approbation) |
 
-**Exemple** :
-```java
-// ✅ Service = logique métier réutilisable
-@Service @Transactional
-public class QuoteService {
-    public Devis createQuote(Long clientId, Long produitId, Double montant) {
-        // Logique complexe : validation, auto-approbation, etc.
-    }
-}
-
-// Utilisable de plusieurs contextes
-// 1. API Controller → HTTP
-// 2. Batch scheduler → créer devis auto la nuit
-// 3. CLI tool → import CSV de devis
-// 4. Unit tests → sans HTTP
-```
-
----
-
-### 3️⃣ **Pourquoi la validation par annotations (Jakarta Validation) ?**
-
-| Approche | Pros | Cons |
-|----------|------|------|
-| **Annotations DTO** | Déclaratif, centralisé, automatique Spring, clair | Limité à champs simples |
-| **Logique Service** | Logique complexe, règles métier | Code verbeux, facile oublier |
-| **Combinaison** | ✅ Annotations simples + Service pour complexe | — |
-
-**Notre stratégie** :
-- **DTO annotations** : Validation basique immédiate (required, format, range)
-- **Service** : Validation complexe (business rules, dépendances, seuils)
-
-```java
-// DTO = validation simple & syntaxique
-public record QuoteRequestDto(
-    @NotNull Long clientId,           // simple notNull
-    @NotNull Long produitId,          // simple notNull
-    @NotNull @Min(0) Double montant   // simple min
-) {}
-
-// Service = validation complexe & métier
-@Service
-public class QuoteService {
-    public Devis createQuote(...) {
-        // 1. Client existe ? (404)
-        // 2. Produit existe ? (404)
-        // 3. Montant valide (>= 0) ? (422)
-        // 4. Client a pas trop de devis ? (422)
-        // 5. Déterminer statut auto (APPROVED vs PENDING_MANAGER)
-    }
-}
-```
-
----
-
----
-
-## 📁 Structure du projet
-
-```
-src/main/java/com/baridmedia/assuranceapi/
-├── AssuranceApiApplication.java          # Point d'entrée Spring Boot
-├── controller/                            # Couche REST
-│   ├── ClientController.java             # Endpoints /api/clients
-│   ├── ProductController.java            # Endpoints /api/products
-│   ├── QuoteController.java              # Endpoints /api/quotes
-│   └── ContractController.java           # Endpoints /api/contracts
-├── service/                               # Couche métier
-│   ├── ClientService.java                # Logique Client
-│   ├── ProductService.java               # Logique Produit
-│   ├── QuoteService.java                 # Logique Devis + seuils approbation
-│   └── ContractService.java              # Logique Contrat
-├── domain/                                # Entités JPA
-│   ├── Client.java                       # Entity Client
-│   ├── Produit.java                      # Entity Produit
-│   ├── Devis.java                        # Entity Devis (Quote)
-│   ├── Contrat.java                      # Entity Contrat (Contract)
-│   ├── QuoteStatus.java                  # Enum : DRAFT, PENDING_MANAGER, APPROVED, REJECTED
-│   └── ContractStatus.java               # Enum : ACTIVE, SUSPENDED, EXPIRED, CANCELLED
-├── dto/                                   # DTOs et mappings
-│   ├── ClientRequestDto.java             # DTO entrée créer Client
-│   ├── ClientDto.java                    # DTO sortie Client
-│   ├── ProduitRequestDto.java            # DTO entrée créer Produit
-│   ├── ProduitDto.java                   # DTO sortie Produit
-│   ├── QuoteRequestDto.java              # DTO entrée créer Devis
-│   ├── QuoteDto.java                     # DTO sortie Devis
-│   ├── ContractRequestDto.java           # DTO entrée créer Contrat
-│   └── ContractDto.java                  # DTO sortie Contrat
-├── repository/                            # Couche persistence (JPA)
-│   ├── ClientRepository.java             # JpaRepository<Client, Long>
-│   ├── ProduitRepository.java            # JpaRepository<Produit, Long>
-│   ├── DevisRepository.java              # JpaRepository<Devis, Long>
-│   └── ContratRepository.java            # JpaRepository<Contrat, Long>
-├── exception/                             # Exceptions + handler global
-│   ├── ConflictException.java            # Conflit (409)
-│   ├── BusinessException.java            # Erreur métier (422)
-│   ├── ResourceNotFoundException.java    # Pas trouvé (404)
-│   └── GlobalExceptionHandler.java       # @ControllerAdvice centralisé
-└── resources/
-    ├── application.properties             # Config (H2, JPA, logging)
-    └── application-prod.properties       # Config production (PostgreSQL, etc.)
-```
 
 
 
